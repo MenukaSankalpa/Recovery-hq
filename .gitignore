@@ -1,0 +1,17 @@
+# dependencies / build
+node_modules
+.next
+.vercel
+
+# secrets - never upload
+.env
+.env.local
+vercel-env.txt
+
+# company data and user passwords - never upload
+*.xlsx
+*.xls
+*.csv
+add-users.js
+test-db.js
+reset-ceo.js

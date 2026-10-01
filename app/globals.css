@@ -1,0 +1,53 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --color-ink-950: #05080f;
+  --color-ink-900: #0a0f1c;
+  --color-ink-850: #0e1424;
+  --color-ink-800: #131a2d;
+  --color-ink-700: #1c2540;
+  --color-ink-600: #2a3558;
+}
+
+html, body { background: var(--color-ink-950); color: #e2e8f0; }
+body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+body::before {
+  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: -1;
+  background:
+    radial-gradient(900px 500px at 10% -10%, rgba(16,185,129,.10), transparent 60%),
+    radial-gradient(800px 500px at 110% 10%, rgba(99,102,241,.10), transparent 60%);
+}
+
+.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+
+@layer components {
+.card { @apply rounded-2xl border border-white/[0.07] bg-ink-900/80 backdrop-blur-sm shadow-[0_1px_0_0_rgba(255,255,255,0.04)_inset,0_10px_30px_-12px_rgba(0,0,0,0.6)]; }
+.card-pad { @apply p-4 sm:p-5; }
+.label { @apply block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5; }
+.input { @apply w-full rounded-xl border border-white/10 bg-ink-850 px-3 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 outline-none transition focus:border-emerald-400/60 focus:ring-2 focus:ring-emerald-400/20; }
+select.input { @apply pr-8; }
+.btn { @apply inline-flex min-w-0 items-center justify-center gap-2 rounded-xl px-3.5 py-2.5 text-sm font-semibold transition active:scale-[.98] disabled:opacity-50 disabled:pointer-events-none whitespace-nowrap; }
+.btn-primary { @apply bg-emerald-500 text-ink-950 hover:bg-emerald-400 shadow-[0_8px_24px_-8px_rgba(16,185,129,.6)]; }
+.btn-ghost { @apply border border-white/10 bg-white/[0.03] text-slate-200 hover:bg-white/[0.07]; }
+.btn-danger { @apply bg-rose-500/15 text-rose-300 border border-rose-500/30 hover:bg-rose-500/25; }
+.btn-amber { @apply bg-amber-400/15 text-amber-200 border border-amber-400/30 hover:bg-amber-400/25; }
+.btn-sm { @apply px-2.5 py-1.5 text-xs rounded-lg; }
+.chip { @apply inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs font-medium text-slate-300; }
+.tbl { @apply w-full text-sm; }
+.tbl th { @apply px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 whitespace-nowrap bg-ink-850/60; }
+.tbl td { @apply px-3 py-3 border-t border-white/[0.05] whitespace-nowrap; }
+.tbl tbody tr { @apply transition hover:bg-white/[0.025]; }
+
+}
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: #243052; border-radius: 99px; }
+::-webkit-scrollbar-track { background: transparent; }
+input[type="date"]::-webkit-calendar-picker-indicator, input[type="datetime-local"]::-webkit-calendar-picker-indicator { filter: invert(.8); }
+
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.rise { animation: rise .35s ease both; }
+@keyframes pulse-dot { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+.live-dot { animation: pulse-dot 1.6s ease-in-out infinite; }
