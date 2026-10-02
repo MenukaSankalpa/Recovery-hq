@@ -4,7 +4,7 @@ import { CircleDollarSign, XCircle, Trash2, CalendarClock, Phone, Hash, Users, H
 import { Drawer, Progress, StatusBadge, Spinner, Badge, toast } from './ui';
 import CollectionForm from './CollectionForm';
 import { api } from '@/lib/client';
-import { enrich, promiseState, promiseLeft } from '@/lib/metrics';
+import { enrich, promiseState, promiseLeft, invoiceStatus } from '@/lib/metrics';
 import { PromiseBadge } from './PromiseBadge';
 import { money, fmtDate, fmtDateTime, short } from '@/lib/format';
 import { useMe } from './AppShell';
@@ -93,26 +93,33 @@ export default function CustomerDrawer({ id, open, onClose, onChanged, canCollec
           {c.invoices?.length > 0 && (
             <div className="rounded-2xl border border-white/[0.06]">
               <button className="flex w-full items-center justify-between p-3 text-sm font-semibold text-white" onClick={() => setShowInv(!showInv)}>
-                <span className="flex items-center gap-2"><Receipt className="h-4 w-4 text-slate-400" />{c.invoices.length} invoice lines · {c.parts.length} still open</span>
+                <span className="flex items-center gap-2"><Receipt className="h-4 w-4 text-slate-400" />{c.invoices.length} invoice lines · {c.parts.length} still open{c.parts.some((p) => p.open < p.amount) && ' · some part paid'}</span>
                 <span className="text-xs text-slate-400">{showInv ? 'Hide' : 'Show'}</span>
               </button>
               {showInv && (
                 <div className="max-h-72 overflow-auto border-t border-white/[0.06]">
                   <table className="tbl text-xs">
-                    <thead><tr><th>Invoice</th><th>Date</th><th>Due</th><th>Amount</th><th>Open</th><th>Overdue</th></tr></thead>
+                    <thead><tr><th>Invoice</th><th>Date</th><th>Due</th><th>Amount</th><th>Paid</th><th>Open</th><th>Status</th></tr></thead>
                     <tbody>
-                      {[...c.invoices].sort((a, b) => new Date(a.date) - new Date(b.date)).map((iv, i) => {
-                        const p = c.parts.find((x) => x.ref === iv.ref && Math.abs(x.amount - iv.amount) < 0.01);
-                        return (
-                          <tr key={i} className={iv.amount < 0 ? 'text-sky-300' : ''}>
-                            <td className="font-semibold">{iv.ref || '—'}{iv.note && <div className="text-[10px] text-emerald-300">{iv.note}</div>}</td>
-                            <td>{fmtDate(iv.date)}</td><td>{iv.amount < 0 ? '—' : fmtDate(iv.dueDate)}</td>
-                            <td className="num">{money(iv.amount, '')}</td>
-                            <td className={`num ${p ? 'text-rose-300' : 'text-emerald-300'}`}>{iv.amount < 0 ? 'credit' : p ? money(p.open, '') : 'cleared'}</td>
-                            <td className="num">{p?.overdueDays ? `${p.overdueDays}d` : '—'}</td>
-                          </tr>
-                        );
-                      })}
+                      {(() => {
+                        const st = invoiceStatus(d.customer);
+                        return [...st.rows.sort((a, b) => a.date - b.date), ...st.creditRows].map((r, i) => {
+                          if (r.credit) return (
+                            <tr key={'c' + i} className="text-sky-300"><td className="font-semibold">{r.ref || '—'}</td><td>{fmtDate(r.date)}</td><td>—</td><td className="num">{money(r.amount, '')}</td><td colSpan={2}>credit / receipt</td><td>—</td></tr>
+                          );
+                          const late = r.open > 0 ? Math.max(0, Math.round((Date.now() - r.due) / 86400000)) : 0;
+                          return (
+                            <tr key={i}>
+                              <td className="font-semibold">{r.ref || '—'}</td>
+                              <td>{fmtDate(r.date)}</td><td>{fmtDate(r.due)}</td>
+                              <td className="num">{money(r.amount, '')}</td>
+                              <td className="num text-emerald-300">{r.paid + r.auto > 0 ? money(r.paid + r.auto, '') : '—'}</td>
+                              <td className={`num ${r.open > 0 ? 'text-rose-300' : 'text-slate-500'}`}>{r.open > 0 ? money(r.open, '') : '0'}</td>
+                              <td>{r.state === 'paid' ? <Badge tone="settled">Paid</Badge> : r.state === 'part' ? <Badge tone="amber">Part paid</Badge> : <Badge tone={late > 0 ? 'overdue' : 'current'}>{late > 0 ? `${late}d late` : 'Open'}</Badge>}</td>
+                            </tr>
+                          );
+                        });
+                      })()}
                     </tbody>
                   </table>
                 </div>
@@ -178,6 +185,9 @@ export default function CustomerDrawer({ id, open, onClose, onChanged, canCollec
                       {canDelete && <button onClick={() => remove(e)} className="rounded-lg p-1.5 text-slate-500 hover:bg-rose-500/10 hover:text-rose-300" title="Delete entry"><Trash2 className="h-3.5 w-3.5" /></button>}
                     </div>
                     {e.type === 'payment' && (e.method || e.reference) && <div className="mt-1.5 flex items-center gap-1 text-xs text-slate-400"><Hash className="h-3 w-3" />{[e.method, e.reference].filter(Boolean).join(' · ')}</div>}
+                    {e.allocations?.length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap gap-1">{e.allocations.map((a) => <span key={a.ref} className="num rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[11px] text-emerald-200">{a.ref}: {money(a.amount, '')}</span>)}</div>
+                    )}
                     {e.reason && <div className="mt-1.5 text-sm text-slate-200">“{e.reason}”</div>}
                     {e.type === 'promise' && e.fulfilled > 0 && e.status !== 'kept' && <div className="mt-1 text-xs text-violet-200/80">Received so far {money(e.fulfilled, '')} · {money(promiseLeft(e), '')} still to come</div>}
                     {e.type !== 'promise' && e.promiseDate && <div className="mt-1 text-xs font-semibold text-sky-300">Said they will pay: {fmtDate(e.promiseDate)}</div>}

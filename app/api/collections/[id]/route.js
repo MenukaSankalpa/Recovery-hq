@@ -31,6 +31,10 @@ export const DELETE = handle(async (req, ctx) => {
     const c = await Customer.findById(e.customer);
     if (c) {
       c.paidAmount = Math.max(0, Math.round((c.paidAmount - e.amount) * 100) / 100);
+      for (const a of e.allocations || []) {
+        const inv = c.invoices.find((x) => x.ref === a.ref && x.amount > 0);
+        if (inv) inv.paid = Math.max(0, Math.round(((inv.paid || 0) - a.amount) * 100) / 100);
+      }
       await c.save();
     }
   }

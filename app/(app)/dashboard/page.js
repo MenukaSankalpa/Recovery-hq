@@ -217,7 +217,7 @@ export default function Dashboard() {
 
       {/* KPI cards */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-        <Kpi icon={Wallet} label="Total receivable" value={short(K.ar)} sub={<>{V.cs.length} customers · {short(K.paid)} recovered{K.credit > 0 && <span className="block text-sky-300/80" title={`${K.creditN} customers hold credit balances`}>net of {short(K.credit)} credits: {short(K.ar - K.credit)}</span>}</>} tone="indigo" />
+        <Kpi icon={Wallet} label="Total receivable" value={short(K.ar - K.credit)} sub={<>{V.cs.length} customers · {short(K.paid)} recovered{K.credit > 0 && <span className="block text-sky-300/80" title={`${K.creditN} customers hold credit balances`}>{short(K.ar)} owed − {short(K.credit)} credit balances</span>}</>} tone="indigo" />
         <Kpi icon={TrendingDown} label="Outstanding" value={short(K.outstanding)} sub={`${fmtPct(pct(K.outstanding, K.ar))} of AR still due`} tone="rose" delay={40}>
           <Progress value={pct(K.paid, K.ar)} className="mt-2 !h-1.5" color="bg-emerald-400" />
         </Kpi>

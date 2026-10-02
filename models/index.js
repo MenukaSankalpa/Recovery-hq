@@ -25,6 +25,7 @@ const InvoiceSchema = new Schema(
     creditPeriodDays: { type: Number, default: 0 },
     dueDate: Date,
     amount: { type: Number, default: 0 }, // negative = credit note / unapplied payment
+    paid: { type: Number, default: 0 }, // collected against THIS invoice in the system (invoice-wise payments)
     note: { type: String, default: '' },
   },
   { _id: false }
@@ -89,6 +90,7 @@ const CollectionSchema = new Schema(
     method: { type: String, default: '' },
     reference: { type: String, default: '' },
     reason: { type: String, default: '' },
+    allocations: { type: [{ ref: String, amount: Number, _id: false }], default: undefined }, // payment split by invoice
     promiseDate: Date,
     status: { type: String, enum: ['open', 'kept', 'cancelled'] }, // promises only
     fulfilled: { type: Number, default: 0 }, // promises only: paid against this promise so far

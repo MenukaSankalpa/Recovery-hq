@@ -3,6 +3,7 @@ import { assertCustomerAccess } from '@/lib/access';
 import { toDate, num, round2 } from '@/lib/util';
 import { Customer, Collection } from '@/models';
 import { recomputePromises, openPromisedFor } from '@/lib/promises';
+import { invoiceStatus } from '@/lib/metrics';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,12 +49,30 @@ export const POST = handle(async (req) => {
   if (date.getTime() > Date.now() + 5 * 60000) throw new HttpError(400, 'Date cannot be in the future');
 
   const entry = { customer: c._id, group: c.group || null, user: user._id, type, date, note: b.note || '' };
+  let allocs = [];
   if (type === 'payment') {
-    const amount = num(b.amount, 'amount');
+    // optional: split the payment by invoice, e.g. [{ ref: 'INV-1', amount: 50 }] (part payments allowed)
+    if (Array.isArray(b.allocations) && b.allocations.some((a) => Number(a.amount) > 0)) {
+      if (!c.invoices?.length) throw new HttpError(400, 'This customer has no invoice lines');
+      const open = Object.fromEntries(invoiceStatus(c.toObject()).rows.map((r) => [r.ref, r.open]));
+      const seen = new Set();
+      for (const a of b.allocations) {
+        const amt = num(a.amount, `amount for ${a.ref}`);
+        if (amt <= 0) continue;
+        const ref = String(a.ref);
+        if (seen.has(ref)) throw new HttpError(400, `Invoice ${ref} is listed twice`);
+        seen.add(ref);
+        if (!c.invoices.some((x) => x.ref === ref && x.amount > 0)) throw new HttpError(400, `Invoice ${ref} does not belong to this customer`);
+        if (amt > (open[ref] || 0) + 0.001) throw new HttpError(400, `Invoice ${ref} has only ${(open[ref] || 0).toLocaleString()} open`);
+        allocs.push({ ref, amount: amt });
+      }
+    }
+    const amount = allocs.length ? round2(allocs.reduce((s, a) => s + a.amount, 0)) : num(b.amount, 'amount');
     if (amount <= 0) throw new HttpError(400, 'Amount must be more than 0');
     const balance = round2(c.amount - c.paidAmount);
     if (amount > balance + 0.001) throw new HttpError(400, `Amount is more than the balance due (${balance.toLocaleString()})`);
     entry.amount = amount;
+    if (allocs.length) entry.allocations = allocs;
     entry.method = b.method || 'Cash';
     entry.reference = b.reference || '';
   } else if (type === 'promise') {
@@ -73,12 +92,18 @@ export const POST = handle(async (req) => {
   }
 
   const doc = await Collection.create(entry);
-  const upd = { $set: { lastActivityAt: new Date(), lastOutcome: type } };
+  c.lastActivityAt = new Date();
+  c.lastOutcome = type;
   if (type === 'payment') {
-    upd.$inc = { paidAmount: entry.amount };
-    upd.$set.lastPaymentAt = date;
+    c.paidAmount = round2((c.paidAmount || 0) + entry.amount);
+    c.lastPaymentAt = date;
+    for (const a of allocs) {
+      const inv = c.invoices.find((x) => x.ref === a.ref && x.amount > 0);
+      inv.paid = round2((inv.paid || 0) + a.amount);
+    }
   }
-  const updated = await Customer.findByIdAndUpdate(c._id, upd, { new: true }).lean();
+  await c.save();
+  const updated = c.toObject();
   if (type === 'payment') await recomputePromises(c._id);
   return json({ entry: doc, customer: updated }, 201);
 });
