@@ -79,7 +79,7 @@ export default function Settings() {
           </div>
         </div>
       </Card>
-      <Card className="mt-4 border-rose-500/20 p-5">
+      {/* <Card className="mt-4 border-rose-500/20 p-5">
         <div className="flex items-start gap-3">
           <Trash2 className="mt-0.5 h-5 w-5 text-rose-400" />
           <div className="flex-1">
@@ -88,7 +88,7 @@ export default function Settings() {
             <button className="btn btn-danger mt-3" onClick={clearAll}>Remove all customer data</button>
           </div>
         </div>
-      </Card>
+      </Card> */}
       <p className="mt-4 text-xs text-slate-500">Auto-logout after {me.idleMinutes} minutes of inactivity (change IDLE_MINUTES in Vercel env).</p>
     </div>
   );

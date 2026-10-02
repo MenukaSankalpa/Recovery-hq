@@ -31,7 +31,7 @@ export default function My() {
       const ents = data.entries.filter((e) => String(e.group) === String(g._id));
       const collected = ents.filter((e) => e.type === 'payment').reduce((s, e) => s + e.amount, 0);
       const myCollected = ents.filter((e) => e.type === 'payment' && String(e.user?._id) === me.user._id).reduce((s, e) => s + e.amount, 0);
-      const outstanding = members.reduce((s, c) => s + c.balance, 0);
+      const outstanding = members.reduce((s, c) => s + Math.max(0, c.balance), 0);
       const target = outstanding + collected;
       const days = groupDays(g);
       const share = target / days / Math.max(1, g.assignees.length);

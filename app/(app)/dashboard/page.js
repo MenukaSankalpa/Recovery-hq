@@ -36,10 +36,12 @@ function Kpi({ icon: Icon, label, value, sub, tone = 'emerald', children, delay 
   );
 }
 
+const f2 = (n) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 export default function Dashboard() {
   const me = useMe();
   const [range, setRange] = useState({ ...presetRange('30d'), preset: '30d' });
-  const [basis, setBasis] = useState(me.settings.agingBasis || 'overdue');
+  const [basis, setBasis] = useState(me.settings.agingBasis || 'age');
   const [newBucket, setNewBucket] = useState('');
   const [open, setOpen] = useState(null);
   const [groupOpen, setGroupOpen] = useState(null);
@@ -69,7 +71,7 @@ export default function Dashboard() {
     });
     const cs = data.customers.map((c0) => {
       const c = enrich(c0, now);
-      c.promised = Math.min(c.balance, promisedBy[String(c._id)] || 0);
+      c.promised = Math.max(0, Math.min(c.balance, promisedBy[String(c._id)] || 0));
       return c;
     });
     const cMap = Object.fromEntries(cs.map((c) => [String(c._id), c]));
@@ -89,10 +91,13 @@ export default function Dashboard() {
     const sum = (a, f) => a.reduce((s, x) => s + (f ? f(x) : x), 0);
 
     const open = cs.filter((c) => c.balance > 0);
+    // all figures are signed sums of the file lines, so they tally with Excel
     const K = {
-      ar: sum(cs, (c) => c.amount), credit: sum(cs, (c) => c.creditBalance || 0), creditN: cs.filter((c) => c.creditBalance > 0).length, paid: sum(cs, (c) => c.paidAmount || 0), outstanding: sum(open, (c) => c.balance),
-      overdue: sum(open, (c) => c.overdueAmt), overdueCount: open.filter((c) => c.status === 'overdue').length,
-      promised: sum(open, (c) => c.promised),
+      ar: sum(cs, (c) => c.amount), paid: sum(cs, (c) => c.paidAmount || 0), outstanding: sum(cs, (c) => c.balance),
+      plusN: sum(cs, (c) => c.plusLines), plus: sum(cs, (c) => c.plusTotal), minusN: sum(cs, (c) => c.minusLines), minus: sum(cs, (c) => c.minusTotal),
+      creditN: cs.filter((c) => c.status === 'credit').length,
+      overdue: sum(cs, (c) => c.overdueAmt), overdueCount: open.filter((c) => c.status === 'overdue').length,
+      promised: sum(cs, (c) => c.promised),
       broken: sum(proms.filter((p) => p.state === 'broken'), (p) => p.left), brokenCount: proms.filter((p) => p.state === 'broken').length,
       promDueToday: sum(proms.filter((p) => p.state === 'today'), (p) => p.left), promDueTodayN: proms.filter((p) => p.state === 'today').length,
       collectedRange: sum(rangePays, (e) => e.amount), collectedToday: sum(todayPays, (e) => e.amount),
@@ -102,17 +107,18 @@ export default function Dashboard() {
 
     // aging tiles
     // invoice-level: each open invoice slice goes to its own bucket; promises reduce the oldest slices first
-    const agg = Object.fromEntries(bs.map((b) => [b.key, { amount: 0, promised: 0, custs: new Set() }]));
-    open.forEach((c) => {
+    const agg = Object.fromEntries(bs.map((b) => [b.key, { amount: 0, minus: 0, promised: 0, custs: new Set() }]));
+    cs.forEach((c) => {
       const alloc = allocateToParts(c.parts, c.promised);
       c.parts.forEach((p, i) => {
         const b = bucketOfPart(p, bs);
         agg[b.key].amount += p.open;
+        if (p.open < 0) agg[b.key].minus += p.open;
         agg[b.key].promised += alloc[i];
         agg[b.key].custs.add(String(c._id));
       });
     });
-    const aging = bs.map((b) => ({ ...b, amount: agg[b.key].amount, promised: agg[b.key].promised, net: agg[b.key].amount - agg[b.key].promised, count: agg[b.key].custs.size }));
+    const aging = bs.map((b) => ({ ...b, amount: agg[b.key].amount, minus: agg[b.key].minus, promised: agg[b.key].promised, net: agg[b.key].amount - agg[b.key].promised, count: agg[b.key].custs.size }));
 
     // per collector
     const people = data.users.filter((u) => u.canCollect).map((u) => {
@@ -188,7 +194,7 @@ export default function Dashboard() {
     V.people.forEach((p) => L.push(`${p.name}: ${f(p.inRange)} /${f(p.rangeTarget)} = ${fmtPct(p.pctRange)}`));
     L.push(`*Total: ${f(V.K.collectedRange)} /${f(V.rangeTarget)}*`);
     L.push('');
-    L.push('*🏆 RANKING - BEST TO WORST (Today)*');
+    L.push('*🏆 PERFORMANCE - BEST TO WORST (Today)*');
     ranked.forEach((p, i) => L.push(`${i + 1}. ${p.name} - ${fmtPct(p.pctToday)}`));
     L.push('');
     L.push(`Outstanding: ${f(V.K.outstanding)} | Overdue: ${f(V.K.overdue)}`);
@@ -217,7 +223,7 @@ export default function Dashboard() {
 
       {/* KPI cards */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-        <Kpi icon={Wallet} label="Total receivable" value={short(K.ar - K.credit)} sub={<>{V.cs.length} customers · {short(K.paid)} recovered{K.credit > 0 && <span className="block text-sky-300/80" title={`${K.creditN} customers hold credit balances`}>{short(K.ar)} owed − {short(K.credit)} credit balances</span>}</>} tone="indigo" />
+        <Kpi icon={Wallet} label="Total receivable" value={short(K.ar)} sub={<>{K.plusN} invoices {short(K.plus)}<span className="block text-sky-300/80">{K.minusN} credits {short(K.minus)}</span></>} tone="indigo" />
         <Kpi icon={TrendingDown} label="Outstanding" value={short(K.outstanding)} sub={`${fmtPct(pct(K.outstanding, K.ar))} of AR still due`} tone="rose" delay={40}>
           <Progress value={pct(K.paid, K.ar)} className="mt-2 !h-1.5" color="bg-emerald-400" />
         </Kpi>
@@ -235,6 +241,26 @@ export default function Dashboard() {
         <Kpi icon={Radio} label="Team online" value={`${data.users.filter((u) => u.online).length}/${data.users.length}`} sub={`${V.activeGroups.length} active groups`} tone="sky" delay={280} />
       </div>
 
+      {/* AR file tally — same figures as the Excel file */}
+      <Card className="mt-4 overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.06] px-4 py-3 sm:px-5">
+          <h2 className="font-bold text-white">AR file summary</h2>
+          <span className="text-xs text-slate-500">Every line of the AR file · tallies with Excel</span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="tbl">
+            <thead><tr><th>Type</th><th className="!text-right">Count</th><th className="!text-right">Total</th></tr></thead>
+            <tbody>
+              <tr><td className="font-semibold text-white">Positive (+) invoices</td><td className="num text-right">{K.plusN.toLocaleString()}</td><td className="num text-right text-white">{f2(K.plus)}</td></tr>
+              <tr><td className="font-semibold text-sky-300">Negative (−) credits / receipts</td><td className="num text-right">{K.minusN.toLocaleString()}</td><td className="num text-right text-sky-300">{f2(K.minus)}</td></tr>
+              <tr className="bg-white/[0.03]"><td className="font-bold text-white">All amounts</td><td className="num text-right font-bold">{(K.plusN + K.minusN).toLocaleString()}</td><td className="num text-right font-bold text-white">{f2(K.ar)}</td></tr>
+              <tr><td className="text-emerald-300">Collected in the system</td><td className="num text-right text-slate-500">—</td><td className="num text-right text-emerald-300">{K.paid ? `−${f2(K.paid)}` : '0'}</td></tr>
+              <tr className="bg-white/[0.03]"><td className="font-bold text-rose-300">Outstanding now</td><td className="num text-right text-slate-500">{K.creditN ? `${K.creditN} cust. in credit` : ''}</td><td className="num text-right font-bold text-rose-300">{f2(K.outstanding)}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
       {/* Aging */}
       <Card className="mt-4 p-4 sm:p-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -248,7 +274,7 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Tabs value={basis} onChange={setBasis} tabs={[{ value: 'overdue', label: 'Days overdue' }, { value: 'age', label: 'Days since invoice' }]} />
+            <Tabs value={basis} onChange={setBasis} tabs={[{ value: 'age', label: 'Days since invoice' }, { value: 'overdue', label: 'Days overdue' }]} />
             <div className="flex flex-wrap items-center gap-1.5">
               {data.settings.agingBuckets.map((b) => (
                 <span key={b} className="chip num">{b}
@@ -272,6 +298,7 @@ export default function Dashboard() {
               <div className="flex items-center gap-2 text-xs font-semibold text-slate-300"><span className="h-2.5 w-2.5 rounded-full" style={{ background: agingColors[i] }} />{a.label}</div>
               <div className="num mt-1.5 text-lg font-bold text-white">{short(a.amount)}</div>
               <div className="text-[11px] text-slate-500">{a.count} customers · {fmtPct(pct(a.amount, K.outstanding))}</div>
+              {a.minus < 0 && <div className="num mt-1 text-[11px] text-sky-300">incl. {money(a.minus, '')} credits</div>}
               {a.promised > 0 && <div className="num mt-1 text-[11px]"><span className="text-violet-300">− {short(a.promised)}</span> <span className="text-slate-500">→</span> <span className="font-bold text-emerald-300">{short(a.net)}</span></div>}
               <div className="mt-2 h-1 overflow-hidden rounded-full bg-white/[0.05]"><div className="h-full rounded-full" style={{ width: `${(a.amount / agingMax) * 100}%`, background: agingColors[i] }} /></div>
             </button>
@@ -302,10 +329,10 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* Team ranking */}
+      {/* Team performance */}
       <Card className="mt-4 overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.06] p-4 sm:p-5">
-          <div className="flex items-center gap-2"><Trophy className="h-5 w-5 text-amber-300" /><h2 className="font-bold text-white">Team ranking — best to worst</h2></div>
+          <div className="flex items-center gap-2"><Trophy className="h-5 w-5 text-amber-300" /><h2 className="font-bold text-white">Team performance — best to worst</h2></div>
           <div className="flex items-center gap-3">
             <span className="hidden text-xs text-slate-500 sm:inline">🔴 &lt;50% · 🟡 50–99% · 🟢 100%+</span>
             <Tabs value={rankBy} onChange={setRankBy} tabs={[{ value: 'today', label: 'Today' }, { value: 'range', label: 'Range' }]} />

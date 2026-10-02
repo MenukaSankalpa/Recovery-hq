@@ -210,7 +210,6 @@ export default function MasterImport({ open, onClose, onDone, existing = 0 }) {
           <div className="mt-3 text-lg font-bold text-white">Import complete</div>
           <div className="mt-1 text-sm text-slate-400">{result.customers} customers · {result.invoices} invoice lines · {result.companies} companies</div>
           <div className="num mt-2 text-2xl font-bold text-emerald-300">{money(result.total, 'LKR')}</div>
-          {result.credit > 0 && <div className="mx-auto mt-3 max-w-md rounded-xl bg-sky-500/10 p-3 text-xs text-sky-100">Receivable {money(result.total, '')} − credit balances {money(result.credit, '')} ({result.creditCustomers} customers whose credits exceed their invoices) = <b className="num">{money(result.net, '')}</b>, same as the file net total.</div>}
           {result.collected > 0 && <div className="mt-2 text-sm text-slate-400">{money(result.collected, '')} recorded as already collected</div>}
         </div>
       ) : (

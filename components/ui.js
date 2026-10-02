@@ -118,6 +118,7 @@ export function Badge({ tone = 'slate', children, className }) {
 }
 export function StatusBadge({ c }) {
   if (c.status === 'settled') return <Badge tone="settled">Settled</Badge>;
+  if (c.status === 'credit') return <Badge tone="current">In credit</Badge>;
   if (c.status === 'overdue') return <Badge tone="overdue">{c.overdueDays}d overdue</Badge>;
   return <Badge tone="current">{c.daysToDue === 0 ? 'Due today' : `${c.daysToDue}d left`}</Badge>;
 }

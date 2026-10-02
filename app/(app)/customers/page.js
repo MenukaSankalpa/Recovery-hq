@@ -153,7 +153,7 @@ export default function Customers() {
     });
     const companies = [...new Set(rows.map((r) => r.company).filter(Boolean))].sort();
     const groups = [...new Map(data.customers.filter((c) => c.group?.status === 'active').map((c) => [String(c.group._id), { _id: String(c.group._id), name: c.group.name }])).values()];
-    const t = rows.reduce((a, c) => ({ ar: a.ar + c.amount, bal: a.bal + c.balance, od: a.od + (c.status === 'overdue' ? c.balance : 0) }), { ar: 0, bal: 0, od: 0 });
+    const t = rows.reduce((a, c) => ({ ar: a.ar + c.amount, bal: a.bal + c.balance, od: a.od + c.overdueAmt }), { ar: 0, bal: 0, od: 0 });
     return { rows, groups, bs, t, companies };
   }, [data, me.settings]);
 
