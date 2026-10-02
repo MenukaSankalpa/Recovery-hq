@@ -16,7 +16,7 @@ function navFor(u) {
   if (!u) return [];
   const n = [];
   if (u.role === 'ceo') {
-    n.push({ href: '/dashboard', label: 'CEO Dashboard', short: 'Dashboard', icon: LayoutDashboard });
+    n.push({ href: '/dashboard', label: 'Dashboard', short: 'Dashboard', icon: LayoutDashboard });
     n.push({ href: '/groups', label: 'Group & Assign', short: 'Groups', icon: Boxes });
   }
   if (u.role !== 'ceo' && u.canCollect) n.push({ href: '/my', label: 'My Collections', short: 'Collect', icon: Wallet });

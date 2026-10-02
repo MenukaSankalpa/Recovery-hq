@@ -7,7 +7,7 @@ export default function Brand({ name = 'Recovery HQ', small }) {
       {!small && (
         <div className="leading-tight">
           <div className="text-[15px] font-extrabold tracking-tight text-white">{name}</div>
-          <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-400/80">Recovery war room</div>
+          <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-400/80">Recovery command center</div>
         </div>
       )}
     </div>
