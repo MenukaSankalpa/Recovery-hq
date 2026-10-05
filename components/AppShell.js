@@ -19,6 +19,7 @@ function navFor(u) {
     n.push({ href: '/dashboard', label: 'Dashboard', short: 'Dashboard', icon: LayoutDashboard });
     n.push({ href: '/groups', label: 'Group & Assign', short: 'Groups', icon: Boxes });
   }
+  if (u.role !== 'ceo' && u.canDashboard) n.push({ href: '/dashboard', label: 'Dashboard', short: 'Dashboard', icon: LayoutDashboard });
   if (u.role !== 'ceo' && u.canCollect) n.push({ href: '/my', label: 'My Collections', short: 'Collect', icon: Wallet });
   if (u.canEnter) n.push({ href: '/customers', label: 'Customers', short: 'Customers', icon: Users2 });
   if (u.role === 'ceo') {
@@ -30,7 +31,7 @@ function navFor(u) {
 
 export function homeFor(u) {
   if (!u) return '/login';
-  if (u.role === 'ceo') return '/dashboard';
+  if (u.role === 'ceo' || u.canDashboard) return '/dashboard';
   if (u.canCollect) return '/my';
   return '/customers';
 }

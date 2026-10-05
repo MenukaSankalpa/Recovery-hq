@@ -20,7 +20,7 @@ export const GET = handle(async (req) => {
   ]);
   const p = new URL(req.url).searchParams;
   const todayFrom = p.get('todayFrom') ? new Date(p.get('todayFrom')) : new Date(new Date().toDateString());
-  const mine = await Collection.find({ user: user._id, date: { $gte: todayFrom } })
+  const mine = await Collection.find({ user: user._id, type: { $ne: 'apply' }, date: { $gte: todayFrom } })
     .populate('customer', 'name')
     .sort({ date: -1 })
     .lean();

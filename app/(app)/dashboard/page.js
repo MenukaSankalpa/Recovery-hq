@@ -40,6 +40,7 @@ const f2 = (n) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits
 
 export default function Dashboard() {
   const me = useMe();
+  const isCeo = me.user.role === 'ceo';
   const [range, setRange] = useState({ ...presetRange('30d'), preset: '30d' });
   const [basis, setBasis] = useState(me.settings.agingBasis || 'age');
   const [newBucket, setNewBucket] = useState('');
@@ -51,7 +52,7 @@ export default function Dashboard() {
 
   const today = toInputDate();
   const url = `/api/dashboard?from=${encodeURIComponent(dayStartISO(range.from))}&to=${encodeURIComponent(dayEndISO(range.to))}&todayFrom=${encodeURIComponent(dayStartISO(today))}&todayTo=${encodeURIComponent(dayEndISO(today))}`;
-  const { data, loading, reload, updatedAt } = useLive(url, 15000);
+  const { data, loading, reload, updatedAt, error } = useLive(url, 15000);
 
   const V = useMemo(() => {
     if (!data) return null;
@@ -98,6 +99,7 @@ export default function Dashboard() {
       creditN: cs.filter((c) => c.status === 'credit').length,
       overdue: sum(cs, (c) => c.overdueAmt), overdueCount: open.filter((c) => c.status === 'overdue').length,
       promised: sum(cs, (c) => c.promised),
+      whtPending: sum(cs, (c) => c.whtPending || 0), whtN: cs.filter((c) => c.whtPending > 0).length,
       broken: sum(proms.filter((p) => p.state === 'broken'), (p) => p.left), brokenCount: proms.filter((p) => p.state === 'broken').length,
       promDueToday: sum(proms.filter((p) => p.state === 'today'), (p) => p.left), promDueTodayN: proms.filter((p) => p.state === 'today').length,
       collectedRange: sum(rangePays, (e) => e.amount), collectedToday: sum(todayPays, (e) => e.amount),
@@ -205,7 +207,7 @@ export default function Dashboard() {
   }
 
   if (loading && !data) return <PageLoader />;
-  if (!V) return <div className="card p-6 text-rose-300">Could not load the dashboard.</div>;
+  if (!V) return <div className="card p-6 text-rose-300">{error || 'Could not load the dashboard.'}{/companies/i.test(error || '') && <div className="mt-1 text-sm text-slate-400">Ask the CEO to tick your companies in Users &amp; Log Time → Company access.</div>}</div>;
   const K = V.K;
   const rangeLabel = range.from === range.to ? fmtDate(`${range.from}T00:00`) : `${fmtDateShort(`${range.from}T00:00`)} – ${fmtDateShort(`${range.to}T00:00`)}`;
   const agingMax = Math.max(1, ...V.aging.map((a) => a.amount));
@@ -214,8 +216,9 @@ export default function Dashboard() {
 
   return (
     <div>
-      <PageHeader title="CEO Command Center"
-        subtitle={<span className="inline-flex items-center gap-2"><span className="live-dot h-2 w-2 rounded-full bg-emerald-400" />Live · updated {updatedAt ? fmtTime(updatedAt) : '—'} · {rangeLabel}</span>}>
+      <PageHeader title={isCeo ? 'CEO Command Center' : 'Dashboard'}
+        subtitle={<span className="inline-flex flex-wrap items-center gap-2"><span className="live-dot h-2 w-2 rounded-full bg-emerald-400" />Live · updated {updatedAt ? fmtTime(updatedAt) : '—'} · {rangeLabel}
+          {data.scope && <span className="inline-flex flex-wrap gap-1">· Companies: {data.scope.map((c) => <Badge key={c} tone="violet">{c}</Badge>)}</span>}</span>}>
         <DateRange value={range} onChange={setRange} />
         <button className="btn btn-ghost" onClick={reload} title="Refresh"><RefreshCw className="h-4 w-4" /></button>
         <button className="btn btn-primary" onClick={copyReport}><Copy className="h-4 w-4" />WhatsApp report</button>
@@ -237,7 +240,7 @@ export default function Dashboard() {
         <Kpi icon={Handshake} label="Promised to pay" value={short(K.promised)} sub={`${short(K.promDueToday)} due today · net unpromised ${short(K.outstanding - K.promised)}`} tone="violet" delay={180} />
         <Kpi icon={AlertOctagon} label="Broken promises" value={short(K.broken)} sub={`${K.brokenCount} promises missed their date`} tone="rose" delay={190} />
         <Kpi icon={XCircle} label="Not collected today" value={V.todayMiss.length} sub={`${V.todayProm.length} new promises today`} tone="amber" delay={200} />
-        <Kpi icon={UserX} label="Unassigned balance" value={short(K.unassigned)} sub={<Link href="/groups" className="text-emerald-300 hover:underline">{K.unassignedCount} customers → assign now</Link>} tone="violet" delay={240} />
+        <Kpi icon={UserX} label="Unassigned balance" value={short(K.unassigned)} sub={isCeo ? <Link href="/groups" className="text-emerald-300 hover:underline">{K.unassignedCount} customers → assign now</Link> : `${K.unassignedCount} customers not in a group`} tone="violet" delay={240} />
         <Kpi icon={Radio} label="Team online" value={`${data.users.filter((u) => u.online).length}/${data.users.length}`} sub={`${V.activeGroups.length} active groups`} tone="sky" delay={280} />
       </div>
 
@@ -256,6 +259,8 @@ export default function Dashboard() {
               <tr className="bg-white/[0.03]"><td className="font-bold text-white">All amounts</td><td className="num text-right font-bold">{(K.plusN + K.minusN).toLocaleString()}</td><td className="num text-right font-bold text-white">{f2(K.ar)}</td></tr>
               <tr><td className="text-emerald-300">Collected in the system</td><td className="num text-right text-slate-500">—</td><td className="num text-right text-emerald-300">{K.paid ? `−${f2(K.paid)}` : '0'}</td></tr>
               <tr className="bg-white/[0.03]"><td className="font-bold text-rose-300">Outstanding now</td><td className="num text-right text-slate-500">{K.creditN ? `${K.creditN} cust. in credit` : ''}</td><td className="num text-right font-bold text-rose-300">{f2(K.outstanding)}</td></tr>
+              {K.whtPending > 0 && <tr><td className="text-amber-300">… of which WHT pending (certificates to collect)</td><td className="num text-right text-slate-500">{K.whtN} cust.</td><td className="num text-right text-amber-300">{f2(K.whtPending)}</td></tr>}
+              {K.whtPending > 0 && <tr><td className="text-slate-300">… cash still to collect</td><td /><td className="num text-right text-slate-200">{f2(K.outstanding - K.whtPending)}</td></tr>}
             </tbody>
           </table>
         </div>
@@ -275,7 +280,7 @@ export default function Dashboard() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Tabs value={basis} onChange={setBasis} tabs={[{ value: 'age', label: 'Days since invoice' }, { value: 'overdue', label: 'Days overdue' }]} />
-            <div className="flex flex-wrap items-center gap-1.5">
+            {isCeo && <div className="flex flex-wrap items-center gap-1.5">
               {data.settings.agingBuckets.map((b) => (
                 <span key={b} className="chip num">{b}
                   {data.settings.agingBuckets.length > 1 && <button onClick={() => saveBuckets(data.settings.agingBuckets.filter((x) => x !== b))} className="text-slate-500 hover:text-rose-300"><X className="h-3 w-3" /></button>}
@@ -285,7 +290,7 @@ export default function Dashboard() {
                 <input className="w-16 rounded-l-full border border-white/10 bg-ink-850 px-2.5 py-1 text-xs outline-none focus:border-emerald-400/50" placeholder="e.g. 120" inputMode="numeric" value={newBucket} onChange={(e) => setNewBucket(e.target.value.replace(/\D/g, ''))} />
                 <button className="rounded-r-full border border-l-0 border-white/10 bg-emerald-500/15 px-2 py-1 text-emerald-300 hover:bg-emerald-500/25"><Plus className="h-3.5 w-3.5" /></button>
               </form>
-            </div>
+            </div>}
           </div>
         </div>
         <div className="mt-4 flex h-3 overflow-hidden rounded-full bg-white/[0.04]">
@@ -386,10 +391,10 @@ export default function Dashboard() {
       {/* Groups */}
       <div className="mt-6 mb-3 flex items-center justify-between">
         <h2 className="text-lg font-bold text-white">Collection groups</h2>
-        <Link href="/groups" className="btn btn-ghost btn-sm">Manage groups<ChevronRight className="h-3.5 w-3.5" /></Link>
+        {isCeo && <Link href="/groups" className="btn btn-ghost btn-sm">Manage groups<ChevronRight className="h-3.5 w-3.5" /></Link>}
       </div>
       {!V.recentGroups.length ? (
-        <Card className="p-8 text-center text-sm text-slate-400">No groups yet. <Link href="/groups" className="text-emerald-300">Drag customers into a group and assign collectors →</Link></Card>
+        <Card className="p-8 text-center text-sm text-slate-400">No groups yet. {isCeo && <Link href="/groups" className="text-emerald-300">Drag customers into a group and assign collectors →</Link>}</Card>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {V.recentGroups.map((g) => {
@@ -452,7 +457,7 @@ export default function Dashboard() {
         </div>
       </Card>
 
-      <CustomerDrawer id={open} open={!!open} onClose={() => setOpen(null)} onChanged={reload} canCollect canDelete currency={currency} />
+      <CustomerDrawer id={open} open={!!open} onClose={() => setOpen(null)} onChanged={reload} canCollect={isCeo} canDelete={isCeo} currency={currency} />
       <GroupDetail id={groupOpen} open={!!groupOpen} onClose={() => setGroupOpen(null)} currency={currency} />
     </div>
   );

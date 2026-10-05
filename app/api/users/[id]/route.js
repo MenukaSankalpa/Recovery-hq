@@ -14,6 +14,8 @@ export const PATCH = handle(async (req, ctx) => {
   if (b.role !== undefined) u.role = b.role === 'ceo' ? 'ceo' : 'staff';
   if (b.canEnter !== undefined) u.canEnter = !!b.canEnter;
   if (b.canCollect !== undefined) u.canCollect = !!b.canCollect;
+  if (b.canDashboard !== undefined) u.canDashboard = !!b.canDashboard;
+  if (Array.isArray(b.companies)) u.companies = [...new Set(b.companies.map((c) => String(c).trim().toUpperCase()).filter(Boolean))];
   if (b.active !== undefined) {
     if (String(u._id) === me._id && !b.active) throw new HttpError(400, 'You cannot disable your own account');
     u.active = !!b.active;

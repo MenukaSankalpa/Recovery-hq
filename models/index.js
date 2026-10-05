@@ -10,6 +10,8 @@ const UserSchema = new Schema(
     role: { type: String, enum: ['ceo', 'staff'], default: 'staff' },
     canEnter: { type: Boolean, default: false }, // can add / edit customers
     canCollect: { type: Boolean, default: true }, // can be assigned groups & record collections
+    canDashboard: { type: Boolean, default: false }, // can see the dashboard (only for their companies)
+    companies: { type: [String], default: [] }, // company codes this user may see, e.g. ['CLL','CTL','MSTS']
     team: { type: String, default: '', trim: true },
     phone: { type: String, default: '', trim: true },
     active: { type: Boolean, default: true },
@@ -26,6 +28,8 @@ const InvoiceSchema = new Schema(
     dueDate: Date,
     amount: { type: Number, default: 0 }, // negative = credit note / unapplied payment
     paid: { type: Number, default: 0 }, // collected against THIS invoice in the system (invoice-wise payments)
+    credited: { type: Number, default: 0 }, // (+) invoice: closed by the customer's own receipts / credit notes
+    applied: { type: Number, default: 0 }, // (−) receipt / credit note: how much of it is already used on invoices
     note: { type: String, default: '' },
   },
   { _id: false }
@@ -40,12 +44,14 @@ const CustomerSchema = new Schema(
     contactPerson: { type: String, default: '', trim: true },
     address: { type: String, default: '', trim: true },
     invoiceNo: { type: String, default: '', trim: true },
-    amount: { type: Number, required: true, min: 0 }, // AR value (what the customer must pay)
+    amount: { type: Number, required: true }, // AR value = sum of all lines in the file (negative = customer in credit)
     creditStartDate: { type: Date, required: true }, // payment / credit start date
     creditPeriodDays: { type: Number, required: true, min: 0 },
     dueDate: { type: Date, required: true },
     paidAmount: { type: Number, default: 0 },
-    creditBalance: { type: Number, default: 0 }, // customer owes nothing, we hold their money (unapplied receipts / credit notes)
+    creditBalance: { type: Number, default: 0 },
+    whtDeclared: { type: Number, default: 0 }, // WHT the customer deducted (certificate still to receive)
+    whtReceived: { type: Number, default: 0 }, // WHT certificates received (counted as collected) // customer owes nothing, we hold their money (unapplied receipts / credit notes)
     lastPaymentAt: Date,
     lastActivityAt: Date,
     lastOutcome: { type: String, default: '' },
@@ -85,12 +91,14 @@ const CollectionSchema = new Schema(
     customer: { type: Id, ref: 'Customer', required: true },
     group: { type: Id, ref: 'Group', default: null },
     user: { type: Id, ref: 'User', required: true },
-    type: { type: String, enum: ['payment', 'no_payment', 'promise'], required: true },
+    type: { type: String, enum: ['payment', 'no_payment', 'promise', 'apply'], required: true }, // apply = receipts matched to invoices (not new money)
     amount: { type: Number, default: 0, min: 0 },
     method: { type: String, default: '' },
     reference: { type: String, default: '' },
     reason: { type: String, default: '' },
     allocations: { type: [{ ref: String, amount: Number, _id: false }], default: undefined }, // payment split by invoice
+    credits: { type: [{ ref: String, amount: Number, _id: false }], default: undefined }, // type 'apply': which receipts were used
+    wht: { type: Number, default: 0 }, // WHT deducted by the customer with this payment (not cash)
     promiseDate: Date,
     status: { type: String, enum: ['open', 'kept', 'cancelled'] }, // promises only
     fulfilled: { type: Number, default: 0 }, // promises only: paid against this promise so far
@@ -123,7 +131,7 @@ const SettingSchema = new Schema({
   companyName: { type: String, default: 'Recovery HQ' },
   currency: { type: String, default: 'LKR' },
   agingBuckets: { type: [Number], default: [30, 60, 90] },
-  agingBasis: { type: String, enum: ['overdue', 'age'], default: 'overdue' },
+  agingBasis: { type: String, enum: ['overdue', 'age'], default: 'age' }, // 'age' = days since invoice date
 });
 
 export const User = models.User || model('User', UserSchema);
@@ -133,8 +141,18 @@ export const Collection = models.Collection || model('Collection', CollectionSch
 export const Session = models.Session || model('Session', SessionSchema);
 export const Setting = models.Setting || model('Setting', SettingSchema);
 
+const SETTING_DEFAULTS = { companyName: 'Recovery HQ', currency: 'LKR', agingBuckets: [30, 60, 90], agingBasis: 'age' };
+
+// Always returns complete settings, even if the stored document is missing fields
 export async function getSettings() {
   let s = await Setting.findOne({ key: 'app' }).lean();
-  if (!s) s = (await Setting.create({ key: 'app' })).toObject();
-  return s;
+  if (!s) s = (await Setting.create({ key: 'app', ...SETTING_DEFAULTS })).toObject();
+  return {
+    ...SETTING_DEFAULTS,
+    ...s,
+    agingBuckets: Array.isArray(s.agingBuckets) && s.agingBuckets.length ? s.agingBuckets : SETTING_DEFAULTS.agingBuckets,
+    agingBasis: s.agingBasis === 'overdue' ? 'overdue' : 'age',
+    companyName: s.companyName || SETTING_DEFAULTS.companyName,
+    currency: s.currency || SETTING_DEFAULTS.currency,
+  };
 }

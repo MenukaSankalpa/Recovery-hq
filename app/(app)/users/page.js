@@ -1,16 +1,30 @@
 'use client';
 import { useMemo, useState } from 'react';
-import { UserPlus, Pencil, KeyRound, Power, Clock, LogIn, Timer, Activity, Monitor } from 'lucide-react';
+import { UserPlus, Pencil, KeyRound, Power, Clock, LogIn, Timer, Activity, Monitor, Crown, LayoutDashboard, Wallet, Check } from 'lucide-react';
 import { PageHeader, useMe } from '@/components/AppShell';
 import { Card, Modal, Field, Tabs, Badge, PageLoader, Empty, toast, cx } from '@/components/ui';
 import DateRange, { presetRange } from '@/components/DateRange';
 import { api, useLive } from '@/lib/client';
-import { fmtDateTime, fmtDuration, timeAgo, deviceOf, dayStartISO, dayEndISO } from '@/lib/format';
+import { fmtDateTime, fmtDuration, timeAgo, deviceOf, dayStartISO, dayEndISO, short } from '@/lib/format';
 
-const blank = { name: '', username: '', password: '', role: 'staff', team: '', phone: '', canEnter: false, canCollect: true };
+const blank = { name: '', username: '', password: '', role: 'staff', team: '', phone: '', canEnter: false, canCollect: true, canDashboard: false, companies: [], access: 'viewer' };
+
+/** 3 kinds of account */
+export function accessOf(u) {
+  if (u.role === 'ceo') return 'ceo';
+  if (u.canDashboard && !u.canCollect && !u.canEnter) return 'viewer';
+  return 'staff';
+}
+const ACCESS = [
+  { value: 'ceo', icon: Crown, title: 'CEO', text: 'Everything — all companies, groups, users, settings' },
+  { value: 'viewer', icon: LayoutDashboard, title: 'Dashboard only', text: 'Sees only the dashboard, only for the companies you tick' },
+  { value: 'staff', icon: Wallet, title: 'Staff', text: 'Collector and / or data entry' },
+];
 
 function UserForm({ open, onClose, initial, onSaved }) {
-  const [f, setF] = useState(() => (initial ? { ...blank, ...initial, password: '' } : blank));
+  const [f, setF] = useState(() => (initial ? { ...blank, ...initial, password: '', access: accessOf(initial) } : blank));
+  const cos = useLive('/api/companies', 0);
+  const toggleCo = (c) => setF({ ...f, companies: f.companies.includes(c) ? f.companies.filter((x) => x !== c) : [...f.companies, c] });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const editing = !!initial?._id;
@@ -19,6 +33,10 @@ function UserForm({ open, onClose, initial, onSaved }) {
     setErr('');
     try {
       const body = { ...f };
+      if (f.access === 'ceo') Object.assign(body, { role: 'ceo' });
+      if (f.access === 'viewer') Object.assign(body, { role: 'staff', canDashboard: true, canCollect: false, canEnter: false });
+      if (f.access === 'staff') Object.assign(body, { role: 'staff', canDashboard: false, companies: [] });
+      delete body.access;
       if (editing && !body.password) delete body.password;
       if (editing) await api(`/api/users/${initial._id}`, { method: 'PATCH', body });
       else await api('/api/users', { method: 'POST', body });
@@ -46,14 +64,51 @@ function UserForm({ open, onClose, initial, onSaved }) {
         <Field label={editing ? 'New password (leave blank to keep)' : 'Password'}><input className="input" type="password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} /></Field>
         <Field label="Team / label"><input className="input" placeholder="e.g. Team Alpha" value={f.team} onChange={(e) => setF({ ...f, team: e.target.value })} /></Field>
         <Field label="Phone"><input className="input" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} /></Field>
-        <Field label="Role">
-          <select className="input" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}><option value="staff">Staff</option><option value="ceo">CEO (full access)</option></select>
-        </Field>
       </div>
-      {f.role === 'staff' && (
+      <div className="mt-4">
+        <span className="label">Access type</span>
+        <div className="grid gap-2 sm:grid-cols-3">
+          {ACCESS.map((a) => (
+            <button key={a.value} type="button" onClick={() => setF({ ...f, access: a.value })}
+              className={cx('rounded-xl border p-3 text-left transition', f.access === a.value ? 'border-emerald-400/50 bg-emerald-500/[0.08]' : 'border-white/10 hover:bg-white/[0.03]')}>
+              <div className="flex items-center gap-2 text-sm font-bold text-white"><a.icon className={cx('h-4 w-4', f.access === a.value ? 'text-emerald-300' : 'text-slate-400')} />{a.title}</div>
+              <div className="mt-1 text-[11px] leading-snug text-slate-400">{a.text}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+      {f.access !== 'ceo' && (
         <div className="mt-4 space-y-2">
-          <Toggle k="canCollect" label="Collector" hint="Can be assigned customer groups and record payments / not-collected reasons" />
-          <Toggle k="canEnter" label="Data entry" hint="Can add and edit customers (AR value, credit start date, credit period)" />
+          {f.access === 'staff' && <>
+            <Toggle k="canCollect" label="Collector" hint="Can be assigned customer groups and record payments / not-collected reasons" />
+            <Toggle k="canEnter" label="Data entry" hint="Can add and edit customers (AR value, credit start date, credit period)" />
+          </>}
+          {f.access === 'viewer' && (
+            <div className="rounded-xl border border-violet-400/30 bg-violet-500/[0.06] p-3">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-xs font-semibold text-violet-200">Companies this user can see ({f.companies.length})</span>
+                <span className="flex gap-3 text-xs">
+                  <button type="button" className="text-slate-400 hover:text-white" onClick={() => setF({ ...f, companies: (cos.data?.companies || []).map((c) => c.code) })}>All</button>
+                  <button type="button" className="text-slate-400 hover:text-white" onClick={() => setF({ ...f, companies: [] })}>None</button>
+                </span>
+              </div>
+              {!cos.data ? <div className="text-xs text-slate-500">Loading companies…</div> : (
+                <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+                  {cos.data.companies.map((c) => {
+                    const on = f.companies.includes(c.code);
+                    return (
+                      <button key={c.code} type="button" onClick={() => toggleCo(c.code)}
+                        className={cx('rounded-lg border px-2.5 py-2 text-left transition', on ? 'border-violet-400/60 bg-violet-500/20' : 'border-white/10 hover:bg-white/[0.04]')}>
+                        <div className="flex items-center justify-between"><span className="text-sm font-bold text-white">{c.code}</span><span className={cx('h-3.5 w-3.5 rounded border', on ? 'border-violet-300 bg-violet-400' : 'border-white/20')} /></div>
+                        <div className="text-[10px] text-slate-400">{c.customers} customers · {short(c.total)}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {!f.companies.length && <div className="mt-2 text-xs text-amber-300">Tick at least one company, or the user will see nothing.</div>}
+            </div>
+          )}
         </div>
       )}
       {err && <div className="mt-3 text-sm font-medium text-rose-300">{err}</div>}
@@ -85,7 +140,12 @@ function UsersTab() {
                 <div className="flex items-center gap-2"><span className="truncate font-bold text-white">{u.name}</span>{u._id === me.user._id && <Badge>You</Badge>}</div>
                 <div className="text-xs text-slate-400">@{u.username}{u.team && ` · ${u.team}`}</div>
                 <div className="mt-2 flex flex-wrap gap-1.5">
-                  {u.role === 'ceo' ? <Badge tone="amber">CEO</Badge> : <>{u.canCollect && <Badge tone="settled">Collector</Badge>}{u.canEnter && <Badge tone="violet">Data entry</Badge>}</>}
+                  {u.role === 'ceo' ? <Badge tone="amber">CEO · all companies</Badge> : <>
+                    {accessOf(u) === 'viewer' && <Badge tone="current">Dashboard only</Badge>}
+                    {u.canCollect && <Badge tone="settled">Collector</Badge>}{u.canEnter && <Badge tone="violet">Data entry</Badge>}
+                    {u.canDashboard && accessOf(u) !== 'viewer' && <Badge tone="current">+ Dashboard</Badge>}
+                    {u.canDashboard && (u.companies.length ? u.companies.map((c) => <Badge key={c} tone="slate">{c}</Badge>) : <Badge tone="overdue">no company</Badge>)}
+                  </>}
                   {!u.active && <Badge tone="overdue">Disabled</Badge>}
                 </div>
                 <div className="mt-2 text-xs text-slate-500">{u.online ? <span className="text-emerald-300">Online now</span> : `Last login ${timeAgo(u.lastLoginAt)}`}</div>
@@ -200,14 +260,86 @@ function LogTab() {
   );
 }
 
+/** One screen: every user × every company. Tick = that user sees that company on the dashboard. */
+function AccessTab() {
+  const users = useLive('/api/users', 0);
+  const cos = useLive('/api/companies', 0);
+  const [busy, setBusy] = useState('');
+  if (!users.data || !cos.data) return <PageLoader />;
+  const companies = cos.data.companies;
+  const list = users.data.users.filter((u) => u.active);
+  async function save(u, patch) {
+    setBusy(u._id);
+    try {
+      await api(`/api/users/${u._id}`, { method: 'PATCH', body: patch });
+      await users.reload();
+    } catch (e) {
+      toast(e.message, 'err');
+    } finally {
+      setBusy('');
+    }
+  }
+  const toggle = (u, code) => {
+    const has = u.companies.includes(code);
+    const next = has ? u.companies.filter((c) => c !== code) : [...u.companies, code];
+    save(u, { companies: next, canDashboard: next.length > 0 ? true : u.canDashboard });
+  };
+  return (
+    <Card className="overflow-hidden">
+      <div className="border-b border-white/[0.06] p-4">
+        <div className="font-bold text-white">Company access — who sees which company on the dashboard</div>
+        <div className="mt-0.5 text-xs text-slate-400">Tick a box to give that user the company. Changes save at once. CEO accounts always see all companies.</div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="tbl">
+          <thead>
+            <tr>
+              <th>User</th><th>Dashboard</th>
+              {companies.map((c) => <th key={c.code} className="!text-center" title={`${c.customers} customers · ${short(c.total)}`}>{c.code}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {list.map((u) => {
+              const ceo = u.role === 'ceo';
+              return (
+                <tr key={u._id} className={cx(busy === u._id && 'opacity-60')}>
+                  <td><div className="font-semibold text-white">{u.name}</div><div className="text-xs text-slate-500">@{u.username} · {ceo ? 'CEO' : accessOf(u) === 'viewer' ? 'Dashboard only' : [u.canCollect && 'Collector', u.canEnter && 'Data entry'].filter(Boolean).join(', ') || 'Staff'}</div></td>
+                  <td>
+                    {ceo ? <Badge tone="amber">All</Badge> : (
+                      <button onClick={() => save(u, { canDashboard: !u.canDashboard })} className={cx('flex h-5 w-9 items-center rounded-full p-0.5 transition', u.canDashboard ? 'bg-emerald-500' : 'bg-white/10')} title="Dashboard on / off">
+                        <span className={cx('h-4 w-4 rounded-full bg-white transition', u.canDashboard && 'translate-x-4')} />
+                      </button>
+                    )}
+                  </td>
+                  {companies.map((c) => {
+                    const on = ceo || u.companies.includes(c.code);
+                    return (
+                      <td key={c.code} className="!text-center">
+                        <button disabled={ceo || busy === u._id} onClick={() => toggle(u, c.code)}
+                          className={cx('mx-auto grid h-6 w-6 place-items-center rounded-md border transition', on ? (ceo ? 'border-amber-400/30 bg-amber-400/10 text-amber-300' : 'border-violet-400/60 bg-violet-500/30 text-white') : 'border-white/15 hover:border-white/40')}>
+                          {on && <Check className="h-3.5 w-3.5" />}
+                        </button>
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
 export default function UsersPage() {
   const [tab, setTab] = useState('users');
   return (
     <div>
       <PageHeader title="Users & Log Time" subtitle="Manage who can collect or enter data, and see when everyone logged in and how long they used the system.">
-        <Tabs value={tab} onChange={setTab} tabs={[{ value: 'users', label: 'Users' }, { value: 'log', label: 'Login & usage log' }]} />
+        <Tabs value={tab} onChange={setTab} tabs={[{ value: 'users', label: 'Users' }, { value: 'access', label: 'Company access' }, { value: 'log', label: 'Login & usage log' }]} />
       </PageHeader>
-      {tab === 'users' ? <UsersTab /> : <LogTab />}
+      {tab === 'users' ? <UsersTab /> : tab === 'access' ? <AccessTab /> : <LogTab />}
     </div>
   );
 }

@@ -13,7 +13,7 @@ export const GET = handle(async (req, ctx) => {
     .populate({ path: 'group', select: 'name status startDate endDate assignees color', populate: { path: 'assignees', select: 'name team' } })
     .lean();
   if (!c) throw new HttpError(404, 'Customer not found');
-  await assertCustomerAccess(user, { group: c.group?._id });
+  await assertCustomerAccess(user, { group: c.group?._id, company: c.company });
   const entries = await Collection.find({ customer: id })
     .populate('user', 'name team')
     .populate('group', 'name')

@@ -67,13 +67,25 @@ export const POST = handle(async (req) => {
         allocs.push({ ref, amount: amt });
       }
     }
-    const amount = allocs.length ? round2(allocs.reduce((s, a) => s + a.amount, 0)) : num(b.amount, 'amount');
-    if (amount <= 0) throw new HttpError(400, 'Amount must be more than 0');
+    const isWhtCert = b.method === 'WHT certificate';
+    if (isWhtCert && allocs.length) throw new HttpError(400, 'A WHT certificate is not split by invoice');
+    const amount = allocs.length ? round2(allocs.reduce((s, a) => s + a.amount, 0)) : num(b.amount || 0, 'amount');
+    const wht = isWhtCert ? 0 : num(b.wht || 0, 'WHT');
+    if (amount <= 0 && !(wht > 0)) throw new HttpError(400, 'Amount must be more than 0');
     const balance = round2(c.amount - c.paidAmount);
-    if (amount > balance + 0.001) throw new HttpError(400, `Amount is more than the balance due (${balance.toLocaleString()})`);
+    const whtPending = round2(Math.max(0, (c.whtDeclared || 0) - (c.whtReceived || 0)));
+    if (isWhtCert) {
+      if (amount > whtPending + 0.001) throw new HttpError(400, `WHT pending is only ${whtPending.toLocaleString()}`);
+    } else {
+      const cashDue = round2(balance - whtPending);
+      if (amount + wht > cashDue + 0.001)
+        throw new HttpError(400, `Cash + WHT is more than the cash due (${cashDue.toLocaleString()}${whtPending ? `; ${whtPending.toLocaleString()} is already WHT pending` : ''})`);
+    }
     entry.amount = amount;
+    if (wht > 0) entry.wht = wht;
     if (allocs.length) entry.allocations = allocs;
     entry.method = b.method || 'Cash';
+    entry.isWhtCert = isWhtCert;
     entry.reference = b.reference || '';
   } else if (type === 'promise') {
     const amount = num(b.amount, 'amount');
@@ -91,12 +103,16 @@ export const POST = handle(async (req) => {
     if (b.promiseDate) entry.promiseDate = toDate(b.promiseDate, 'promise date');
   }
 
+  const whtCert = entry.isWhtCert;
+  delete entry.isWhtCert;
   const doc = await Collection.create(entry);
   c.lastActivityAt = new Date();
   c.lastOutcome = type;
   if (type === 'payment') {
     c.paidAmount = round2((c.paidAmount || 0) + entry.amount);
     c.lastPaymentAt = date;
+    if (entry.wht) c.whtDeclared = round2((c.whtDeclared || 0) + entry.wht);
+    if (whtCert) c.whtReceived = round2((c.whtReceived || 0) + entry.amount);
     for (const a of allocs) {
       const inv = c.invoices.find((x) => x.ref === a.ref && x.amount > 0);
       inv.paid = round2((inv.paid || 0) + a.amount);

@@ -26,6 +26,8 @@ export const POST = handle(async (req) => {
     role: b.role === 'ceo' ? 'ceo' : 'staff',
     canEnter: !!b.canEnter,
     canCollect: b.canCollect !== false,
+    canDashboard: !!b.canDashboard,
+    companies: Array.isArray(b.companies) ? [...new Set(b.companies.map((c) => String(c).trim().toUpperCase()).filter(Boolean))] : [],
     team: b.team || '',
     phone: b.phone || '',
   });
